@@ -1,0 +1,5 @@
+*.pyc
+__pycache__/
+*.pdf
+testlar_tmp.html
+make_pdf.py
