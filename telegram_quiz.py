@@ -8,14 +8,12 @@ import urllib.parse
 import json
 
 # ===================== SOZLAMALAR =====================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-CHAT_ID   = os.environ.get("CHAT_ID", "")
-                                         # Guruh: -xxxxxxxxxx
-                                         # Shaxsiy: 123456789
+BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")
+CHAT_ID        = os.environ.get("CHAT_ID", "")
 
-START_FROM = 1     # Qaysi savoldan boshlash (1 = boshidan)
-END_AT     = 160   # Qaysi savolda to'xtatish (160 = oxirigacha)
-DELAY_SEC  = 3     # Har bir savol o'rtasidagi kutish (soniya)
+START_FROM     = 1    # Qaysi savoldan boshlash
+END_AT         = 160  # Qaysi savolda to'xtatish
+ANSWER_TIMEOUT = 300  # Javob kutish vaqti (soniya), keyin keyingisiga o'tadi
 # ======================================================
 
 XLSX = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
@@ -74,11 +72,7 @@ def load_questions():
         random.shuffle(options)
         correct_idx = options.index(correct)
 
-        # Telegram: savol max 300 belgi, variant max 100 belgi
         q = q.replace('\n', ' ').strip()
-        if len(q) > 300:
-            q = q[:297] + '...'
-
         fixed_options = []
         for opt in options:
             opt = opt.replace('\n', ' ').strip()
@@ -95,21 +89,40 @@ def load_questions():
     return questions
 
 
-def send_quiz(question, options, correct_option_id):
+def get_updates(offset=None, timeout=30):
+    url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
+    params = {'timeout': timeout, 'allowed_updates': json.dumps(['poll_answer'])}
+    if offset is not None:
+        params['offset'] = offset
+    query = urllib.parse.urlencode(params)
+    req = urllib.request.Request(f'{url}?{query}')
+    try:
+        with urllib.request.urlopen(req, timeout=timeout + 10) as resp:
+            result = json.loads(resp.read().decode())
+            return result.get('result', [])
+    except Exception as e:
+        print(f"  getUpdates xatosi: {e}")
+        return []
+
+
+def send_quiz(num, question, options, correct_option_id):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendPoll'
+
+    q_with_num = f"{num}. {question}"
+    if len(q_with_num) > 300:
+        q_with_num = q_with_num[:297] + '...'
 
     data = {
         'chat_id':           CHAT_ID,
-        'question':          question,
+        'question':          q_with_num,
         'options':           json.dumps(options),
         'type':              'quiz',
         'correct_option_id': correct_option_id,
-        'is_anonymous':      True,
+        'is_anonymous':      False,
     }
 
     encoded = urllib.parse.urlencode(data).encode('utf-8')
     req = urllib.request.Request(url, data=encoded)
-
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode())
@@ -118,43 +131,58 @@ def send_quiz(question, options, correct_option_id):
         return False, str(e)
 
 
-def main():
-    if BOT_TOKEN.startswith('SIZ') or CHAT_ID.startswith('SIZ'):
-        print("XATO: BOT_TOKEN va CHAT_ID ni to'ldiring!")
-        print("  BOT_TOKEN = @BotFather dan olingan token")
-        print("  CHAT_ID   = guruh/kanal/foydalanuvchi ID")
-        return
+def wait_for_answer(poll_id, offset, timeout_sec=300):
+    start = time.time()
+    current_offset = offset
+    while time.time() - start < timeout_sec:
+        remaining = timeout_sec - (time.time() - start)
+        wait = min(30, int(remaining))
+        if wait <= 0:
+            break
+        updates = get_updates(offset=current_offset, timeout=wait)
+        for update in updates:
+            current_offset = update['update_id'] + 1
+            if 'poll_answer' in update:
+                if update['poll_answer']['poll_id'] == poll_id:
+                    return current_offset
+    return current_offset
 
+
+def main():
     print("Savollar yuklanmoqda...")
     questions = load_questions()
     print(f"Jami: {len(questions)} ta savol")
 
     batch = questions[START_FROM - 1: END_AT]
-    print(f"{START_FROM} dan {START_FROM + len(batch) - 1} gacha {len(batch)} ta savol yuboriladi")
-    print(f"Taxminiy vaqt: {len(batch) * DELAY_SEC // 60} daqiqa {len(batch) * DELAY_SEC % 60} soniya\n")
+    print(f"{START_FROM} dan {START_FROM + len(batch) - 1} gacha {len(batch)} ta savol yuboriladi\n")
+
+    # Eski updatelarni tozalash
+    old_updates = get_updates(offset=None, timeout=0)
+    offset = None
+    if old_updates:
+        offset = old_updates[-1]['update_id'] + 1
 
     ok_count = 0
     for i, item in enumerate(batch):
         num = START_FROM + i
-        ok, resp = send_quiz(item['q'], item['options'], item['ans'])
+        ok, resp = send_quiz(num, item['q'], item['options'], item['ans'])
 
         if ok:
             ok_count += 1
-            print(f"[{num:>3}/{END_AT}] OK")
+            poll_id = resp['result']['poll']['id']
+            print(f"[{num:>3}/{END_AT}] Yuborildi — javob kutilmoqda...")
+            offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
+            print(f"[{num:>3}/{END_AT}] OK, keyingisiga o'tilmoqda")
         else:
             print(f"[{num:>3}/{END_AT}] XATO: {resp}")
-            # Rate limit bo'lsa biroz ko'proq kutamiz
             if 'Too Many Requests' in str(resp):
-                print("  Rate limit - 30 soniya kutilmoqda...")
+                print("  Rate limit — 30 soniya kutilmoqda...")
                 time.sleep(30)
-                # Qayta urinish
-                ok2, resp2 = send_quiz(item['q'], item['options'], item['ans'])
+                ok2, resp2 = send_quiz(num, item['q'], item['options'], item['ans'])
                 if ok2:
                     ok_count += 1
-                    print(f"  Qayta urinish: OK")
-
-        if i < len(batch) - 1:
-            time.sleep(DELAY_SEC)
+                    poll_id = resp2['result']['poll']['id']
+                    offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
 
     print(f"\nYakunlandi: {ok_count}/{len(batch)} ta savol yuborildi.")
 
