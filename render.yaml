@@ -3,6 +3,6 @@ services:
     name: bt-pedagogika-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python3 -u bot.py
+    startCommand: python3 -u telegram_quiz.py
     plan: free
     autoDeploy: true

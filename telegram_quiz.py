@@ -18,7 +18,7 @@ END_AT     = 160   # Qaysi savolda to'xtatish (160 = oxirigacha)
 DELAY_SEC  = 3     # Har bir savol o'rtasidagi kutish (soniya)
 # ======================================================
 
-XLSX = '/home/sherzod/Claude_projects/Claude_1/BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx'
+XLSX = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
 
 
 def load_questions():
