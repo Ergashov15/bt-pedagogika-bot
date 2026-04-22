@@ -6,3 +6,7 @@ services:
     startCommand: python3 -u telegram_quiz.py
     plan: free
     autoDeploy: true
+    disk:
+      name: quiz-state
+      mountPath: /data
+      sizeGB: 1

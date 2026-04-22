@@ -16,8 +16,9 @@ END_AT         = 160  # Qaysi savolda to'xtatish
 ANSWER_TIMEOUT = 300  # Javob kutish vaqti (soniya)
 # ======================================================
 
-XLSX       = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'state.json')
+XLSX = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
+_data_dir  = '/data' if os.path.isdir('/data') else os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(_data_dir, 'state.json')
 
 
 def load_questions():
@@ -189,9 +190,9 @@ def main():
         # Restart bo'lgan holat: oldingi poll hali javob kutayapti
         # Yangi savol yubormasdan, avval shu pollni yakunlaymiz
         if poll_id:
-            print(f"[{current_q - 1:>3}/{END_AT}] Oldingi savol — javob kutilmoqda...")
+            print(f"[{current_q:>3}/{END_AT}] Oldingi savol — javob kutilmoqda...")
             offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
-            save_state(current_q, offset, None)
+            save_state(current_q + 1, offset, None)
             continue
 
         # Birinchi marta ishga tushganda eski updatelarni tozalash
