@@ -117,8 +117,18 @@ def get_updates(offset=None, timeout=30):
         with urllib.request.urlopen(req, timeout=timeout + 10) as resp:
             result = json.loads(resp.read().decode())
             return result.get('result', [])
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        if e.code == 409:
+            print(f"  409 Conflict — boshqa instance ishlayapti, 15 soniya kutilmoqda...")
+            time.sleep(15)
+        else:
+            print(f"  getUpdates HTTP xatosi {e.code}: {body}")
+            time.sleep(5)
+        return []
     except Exception as e:
         print(f"  getUpdates xatosi: {e}")
+        time.sleep(5)
         return []
 
 
@@ -170,6 +180,8 @@ def wait_for_answer(poll_id, offset, timeout_sec=300):
 
 
 def main():
+    print("Ishga tushmoqda, 10 soniya kutilmoqda (eski instance tugashi uchun)...")
+    time.sleep(10)
     print("Savollar yuklanmoqda...")
     questions = load_questions()
     print(f"Jami: {len(questions)} ta savol")
