@@ -1,4 +1,6 @@
 import os
+import signal
+import sys
 import zipfile
 import xml.etree.ElementTree as ET
 import random
@@ -6,6 +8,17 @@ import time
 import urllib.request
 import urllib.parse
 import json
+
+_stopping = False
+
+def _handle_stop(signum, frame):
+    global _stopping
+    _stopping = True
+    print("Stop signali olindi, chiqilmoqda...")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _handle_stop)
+signal.signal(signal.SIGINT,  _handle_stop)
 
 # ===================== SOZLAMALAR =====================
 BOT_TOKEN      = os.environ.get("BOT_TOKEN", "")
@@ -106,7 +119,7 @@ def save_state(next_q, offset, poll_id=None):
         json.dump({'next_q': next_q, 'offset': offset, 'poll_id': poll_id}, f)
 
 
-def get_updates(offset=None, timeout=30):
+def get_updates(offset=None, timeout=10):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
     params = {'timeout': timeout, 'allowed_updates': json.dumps(['poll_answer'])}
     if offset is not None:
@@ -167,7 +180,7 @@ def wait_for_answer(poll_id, offset, timeout_sec=300):
         if elapsed >= timeout_sec:
             break
         remaining = timeout_sec - elapsed
-        wait = min(28, int(remaining))
+        wait = min(10, int(remaining))
         if wait <= 0:
             break
         updates = get_updates(offset=current_offset, timeout=wait)
@@ -180,8 +193,8 @@ def wait_for_answer(poll_id, offset, timeout_sec=300):
 
 
 def main():
-    print("Ishga tushmoqda, 10 soniya kutilmoqda (eski instance tugashi uchun)...")
-    time.sleep(10)
+    print("Ishga tushmoqda, 35 soniya kutilmoqda (eski instance tugashi uchun)...")
+    time.sleep(35)
     print("Savollar yuklanmoqda...")
     questions = load_questions()
     print(f"Jami: {len(questions)} ta savol")
