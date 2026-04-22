@@ -84,6 +84,9 @@ def load_questions():
 
         wrongs = [w for w in wrongs if w][:3]
 
+        if len(wrongs) == 0:
+            continue
+
         options = [correct] + wrongs
         random.seed(i * 17 + 3)
         random.shuffle(options)
@@ -160,7 +163,7 @@ def send_quiz(num, question, options, correct_option_id):
         'options':           json.dumps(options),
         'type':              'quiz',
         'correct_option_id': correct_option_id,
-        'is_anonymous':      False,
+        'is_anonymous':      'false',
     }
 
     encoded = urllib.parse.urlencode(data).encode('utf-8')
@@ -169,6 +172,9 @@ def send_quiz(num, question, options, correct_option_id):
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode())
             return result.get('ok', False), result
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        return False, f"HTTP {e.code}: {body}"
     except Exception as e:
         return False, str(e)
 
