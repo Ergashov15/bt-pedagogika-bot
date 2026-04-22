@@ -1,6 +1,8 @@
 import os
 import signal
 import sys
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import zipfile
 import xml.etree.ElementTree as ET
 import random
@@ -192,7 +194,21 @@ def wait_for_answer(poll_id, offset, timeout_sec=300):
     return current_offset
 
 
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, *args):
+        pass
+
+def _start_health_server():
+    port = int(os.environ.get("PORT", 8080))
+    HTTPServer(("0.0.0.0", port), _HealthHandler).serve_forever()
+
+
 def main():
+    threading.Thread(target=_start_health_server, daemon=True).start()
     print("Ishga tushmoqda, 35 soniya kutilmoqda (eski instance tugashi uchun)...")
     time.sleep(35)
     print("Savollar yuklanmoqda...")
