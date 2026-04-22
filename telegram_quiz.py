@@ -13,10 +13,11 @@ CHAT_ID        = os.environ.get("CHAT_ID", "")
 
 START_FROM     = 1    # Qaysi savoldan boshlash
 END_AT         = 160  # Qaysi savolda to'xtatish
-ANSWER_TIMEOUT = 300  # Javob kutish vaqti (soniya), keyin keyingisiga o'tadi
+ANSWER_TIMEOUT = 300  # Javob kutish vaqti (soniya)
 # ======================================================
 
-XLSX = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
+XLSX       = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'BT PEDAGOGIKASIDAN TESTLAR!!!.xlsx')
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'state.json')
 
 
 def load_questions():
@@ -89,6 +90,21 @@ def load_questions():
     return questions
 
 
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {'next_q': START_FROM, 'offset': None, 'poll_id': None}
+
+
+def save_state(next_q, offset, poll_id=None):
+    with open(STATE_FILE, 'w') as f:
+        json.dump({'next_q': next_q, 'offset': offset, 'poll_id': poll_id}, f)
+
+
 def get_updates(offset=None, timeout=30):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
     params = {'timeout': timeout, 'allowed_updates': json.dumps(['poll_answer'])}
@@ -132,11 +148,15 @@ def send_quiz(num, question, options, correct_option_id):
 
 
 def wait_for_answer(poll_id, offset, timeout_sec=300):
+    """Poll_id ga javob kelgunicha yoki timeout tugagunicha kutadi."""
     start = time.time()
     current_offset = offset
-    while time.time() - start < timeout_sec:
-        remaining = timeout_sec - (time.time() - start)
-        wait = min(30, int(remaining))
+    while True:
+        elapsed = time.time() - start
+        if elapsed >= timeout_sec:
+            break
+        remaining = timeout_sec - elapsed
+        wait = min(28, int(remaining))
         if wait <= 0:
             break
         updates = get_updates(offset=current_offset, timeout=wait)
@@ -153,38 +173,51 @@ def main():
     questions = load_questions()
     print(f"Jami: {len(questions)} ta savol")
 
-    batch = questions[START_FROM - 1: END_AT]
-    print(f"{START_FROM} dan {START_FROM + len(batch) - 1} gacha {len(batch)} ta savol yuboriladi\n")
+    while True:
+        state     = load_state()
+        current_q = state.get('next_q', START_FROM)
+        offset    = state.get('offset')
+        poll_id   = state.get('poll_id')
 
-    # Eski updatelarni tozalash
-    old_updates = get_updates(offset=None, timeout=0)
-    offset = None
-    if old_updates:
-        offset = old_updates[-1]['update_id'] + 1
+        # Barcha savollar tugasa qaytadan boshlash
+        if current_q > END_AT or current_q > len(questions):
+            print("\nBarcha savollar yakunlandi, qaytadan boshlanmoqda...")
+            save_state(START_FROM, offset, None)
+            time.sleep(2)
+            continue
 
-    ok_count = 0
-    for i, item in enumerate(batch):
-        num = START_FROM + i
-        ok, resp = send_quiz(num, item['q'], item['options'], item['ans'])
+        # Restart bo'lgan holat: oldingi poll hali javob kutayapti
+        # Yangi savol yubormasdan, avval shu pollni yakunlaymiz
+        if poll_id:
+            print(f"[{current_q - 1:>3}/{END_AT}] Oldingi savol — javob kutilmoqda...")
+            offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
+            save_state(current_q, offset, None)
+            continue
+
+        # Birinchi marta ishga tushganda eski updatelarni tozalash
+        if offset is None:
+            old_updates = get_updates(offset=None, timeout=0)
+            if old_updates:
+                offset = old_updates[-1]['update_id'] + 1
+
+        item = questions[current_q - 1]
+        ok, resp = send_quiz(current_q, item['q'], item['options'], item['ans'])
 
         if ok:
-            ok_count += 1
-            poll_id = resp['result']['poll']['id']
-            print(f"[{num:>3}/{END_AT}] Yuborildi — javob kutilmoqda...")
-            offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
-            print(f"[{num:>3}/{END_AT}] OK, keyingisiga o'tilmoqda")
+            new_poll_id = resp['result']['poll']['id']
+            # Poll yuborildi — state'ga saqlaymiz (restart bo'lsa ham ikkinchi savol chiqmasin)
+            save_state(current_q, offset, new_poll_id)
+            print(f"[{current_q:>3}/{END_AT}] Yuborildi — javob kutilmoqda...")
+            offset = wait_for_answer(new_poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
+            save_state(current_q + 1, offset, None)
+            print(f"[{current_q:>3}/{END_AT}] OK, keyingisiga o'tilmoqda")
         else:
-            print(f"[{num:>3}/{END_AT}] XATO: {resp}")
+            print(f"[{current_q:>3}/{END_AT}] XATO: {resp}")
             if 'Too Many Requests' in str(resp):
                 print("  Rate limit — 30 soniya kutilmoqda...")
                 time.sleep(30)
-                ok2, resp2 = send_quiz(num, item['q'], item['options'], item['ans'])
-                if ok2:
-                    ok_count += 1
-                    poll_id = resp2['result']['poll']['id']
-                    offset = wait_for_answer(poll_id, offset, timeout_sec=ANSWER_TIMEOUT)
-
-    print(f"\nYakunlandi: {ok_count}/{len(batch)} ta savol yuborildi.")
+            else:
+                time.sleep(5)
 
 
 if __name__ == '__main__':
